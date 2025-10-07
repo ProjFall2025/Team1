@@ -44,7 +44,56 @@ Includes: Book Event «include» Make Payment
 ---
 
 ## 5) Database Schema (SQL DDL) (Student 3)
-*(Student 3 pastes SQL here)*
+```sql
+CREATE TABLE Users (
+   user_id INT PRIMARY KEY AUTO_INCREMENT,
+   name VARCHAR(100) NOT NULL,
+   email VARCHAR(100) UNIQUE NOT NULL,
+   password VARCHAR(255) NOT NULL,
+   role ENUM('attendee', 'organizer', 'admin') DEFAULT 'attendee',
+   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE Events (
+   event_id INT PRIMARY KEY AUTO_INCREMENT,
+   organizer_id INT NOT NULL,
+   title VARCHAR(255) NOT NULL,
+   description TEXT,
+   date DATE NOT NULL,
+   venue VARCHAR(255),
+   price DECIMAL(10,2),
+   FOREIGN KEY (organizer_id) REFERENCES Users(user_id)
+);
+
+CREATE TABLE Bookings (
+   booking_id INT PRIMARY KEY AUTO_INCREMENT,
+   user_id INT NOT NULL,
+   event_id INT NOT NULL,
+   booking_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   status ENUM('booked', 'cancelled') DEFAULT 'booked',
+   FOREIGN KEY (user_id) REFERENCES Users(user_id),
+   FOREIGN KEY (event_id) REFERENCES Events(event_id)
+);
+
+CREATE TABLE Payments (
+   payment_id INT PRIMARY KEY AUTO_INCREMENT,
+   booking_id INT NOT NULL,
+   amount DECIMAL(10,2) NOT NULL,
+   payment_status ENUM('pending', 'completed', 'failed') DEFAULT 'pending',
+   payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   FOREIGN KEY (booking_id) REFERENCES Bookings(booking_id)
+);
+
+CREATE TABLE Reviews (
+   review_id INT PRIMARY KEY AUTO_INCREMENT,
+   user_id INT NOT NULL,
+   event_id INT NOT NULL,
+   rating INT CHECK (rating BETWEEN 1 AND 5),
+   comment TEXT,
+   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+   FOREIGN KEY (user_id) REFERENCES Users(user_id),
+   FOREIGN KEY (event_id) REFERENCES Events(event_id)
+);
 
 ---
 
