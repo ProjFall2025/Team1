@@ -30,3 +30,44 @@
 - **DevOps/Deploy:** Docker (multi-stage), AWS (EC2/RDS) or Render/Vercel/Netlify.
 - **Observability:** morgan (HTTP logs), winston (app logs).
 
+## 3) Authentication & Role-Based Access Control (Student 2)
+
+**Roles:** Guest, Attendee, Organizer, Admin
+
+### 3.1 RBAC Matrix (Key Actions)
+
+| Action                | Guest | Attendee     | Organizer     | Admin     |
+|-----------------------|:-----:|:------------:|:-------------:|:---------:|
+| Register/Login        | Yes   | Yes          | Yes           | Yes       |
+| Browse Events         | Yes   | Yes          | Yes           | Yes       |
+| Book Ticket           | No    | Yes          | No            | Yes       |
+| Cancel Booking        | No    | Yes (own)    | No            | Yes (any) |
+| Create Event          | No    | No           | Yes           | Yes       |
+| Edit/Delete Event     | No    | No           | Yes (own)     | Yes (any) |
+| View All Users        | No    | No           | No            | Yes       |
+| Approve Events        | No    | No           | No            | Yes       |
+
+### 3.2 Authentication Flow
+
+1. **Registration/Login:** Client (React) → `POST /api/users/register` or `POST /api/users/login`
+2. **Tokens:** JWT access token (~1 hour) stored in browser memory or `localStorage`.
+3. **Middleware:** 
+   - `authMiddleware` verifies JWT on protected routes
+   - `requireRole('organizer' | 'admin')` for role-restricted endpoints
+4. **Logout:** Client deletes token
+5. **Password Hashing:** `bcrypt` with ≥ 12 salt rounds
+
+### 3.3 Security Notes
+
+- No plain-text passwords; always hash with `bcrypt`
+- HTTPS in production
+- Rotate tokens periodically
+- Keep secrets in `.env`
+- Validate inputs using `express-validator`
+
+### 3.4 Reference Diagram
+
+Use Case Diagram:  
+`docs/uml-use-case.png`
+
+
