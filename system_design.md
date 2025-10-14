@@ -67,7 +67,8 @@
 
 ### 3.4 Reference Diagram
 
-Use Case Diagram:  
-`docs/use-case-system.png`
+![Use Case Diagram](docs/use-case-system.png)
+
+
 
 
