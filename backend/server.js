@@ -1,19 +1,17 @@
 const path = require("path");
 const express = require("express");
-const cors = require("cors");
+const cors = require("cors"); // ✅ Declared ONLY here
 const bodyParser = require("body-parser");
 require("dotenv").config();
 const db = require("./models/db");
 
 const app = express();
 
-const cors = require("cors"); // (Ensure this is imported)
-
+// ✅ CORS Configuration (Fixed)
 app.use(cors({
   origin: ["http://localhost:3000", "https://team1-kohl.vercel.app"],
   credentials: true
 }));
-// ... other middleware ...
 
 // ✅ SERVE STATIC IMAGES
 // This allows the frontend to access images at http://localhost:5001/uploads/filename.jpg
