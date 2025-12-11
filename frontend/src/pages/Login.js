@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import axios from "axios";
+import api from "../axios";
 import { Link } from "react-router-dom"; // 👈 Import Link for the Forgot Password button
 
 function Login() {
@@ -12,10 +12,7 @@ function Login() {
     setLoading(true);
     try {
       // Make sure this URL matches your backend port (5000 or 5001)
-      const res = await axios.post("http://localhost:5001/api/users/login", {
-        email,
-        password,
-      });
+      const res = await api.post("/users/login", { email, password });
 
       // 1. Save Auth Details
       localStorage.setItem("token", res.data.token);
