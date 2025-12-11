@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+// ✅ IMPORT API UTILITY
+import api from "../api/axios"; 
 
 function OrganizerDashboard() {
   const [myEvents, setMyEvents] = useState([]);
@@ -7,7 +8,7 @@ function OrganizerDashboard() {
   const [attendees, setAttendees] = useState([]);
   const [stats, setStats] = useState({ revenue: 0 });
 
-  // 🆕 TOGGLE STATE: Controls visibility of the Events Table
+  // Toggle State
   const [showEvents, setShowEvents] = useState(true);
 
   // Form State
@@ -24,23 +25,26 @@ function OrganizerDashboard() {
   
   const [file, setFile] = useState(null);
   
-  const token = localStorage.getItem("token");
-  const authConfig = { headers: { Authorization: `Bearer ${token}` } };
+  // Note: We don't need 'authConfig' anymore because api.js handles the token!
 
   useEffect(() => { fetchMyEvents(); }, []);
 
-  // 1. Fetch Events
+  // 1. Fetch Events (Fixed & Updated)
   const fetchMyEvents = async () => {
     try {
-      const res = await api.post("/events", data);
+      // ✅ USE API: Correct GET request
+      const res = await api.get("/events/my-events");
       setMyEvents(res.data);
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error("Error fetching events:", err); 
+    }
   };
 
   // 2. Fetch Attendees
   const handleViewAttendees = async (eventId) => {
     try {
-      const res = await axios.get(`http://localhost:5001/api/events/${eventId}/attendees`, authConfig);
+      // ✅ USE API
+      const res = await api.get(`/events/${eventId}/attendees`);
       setSelectedEvent(res.data.event);
       setAttendees(res.data.attendees);
       setStats({ revenue: res.data.total_revenue });
@@ -71,7 +75,8 @@ function OrganizerDashboard() {
     }
 
     try {
-      await axios.post("http://localhost:5001/api/events", data, authConfig);
+      // ✅ USE API: Post data
+      await api.post("/events", data);
       
       alert("✅ Event Created Successfully!");
       setFormData({ 
@@ -80,7 +85,7 @@ function OrganizerDashboard() {
       });
       setFile(null);
       fetchMyEvents(); 
-      setShowEvents(true); // Auto-open the list to show the new event
+      setShowEvents(true); 
     } catch (err) { 
       alert(err.response?.data?.error || "Error creating event"); 
     }
@@ -90,7 +95,8 @@ function OrganizerDashboard() {
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this event?")) return;
     try {
-      await axios.delete(`http://localhost:5001/api/events/${id}`, authConfig);
+      // ✅ USE API: Delete
+      await api.delete(`/events/${id}`);
       fetchMyEvents();
       if (selectedEvent?.event_id === id) setSelectedEvent(null); 
     } catch (err) { alert("Failed to delete"); }
@@ -101,7 +107,7 @@ function OrganizerDashboard() {
       <h2 className="mb-4">👋 Organizer Dashboard</h2>
       
       {/* --- CREATE EVENT FORM --- */}
-      <div className="card p-4 mb-5 shadow-sm">
+      <div className="card p-4 mb-5 shadow-sm border-0">
         <h4 className="mb-3">✨ Host a New Event</h4>
         <form onSubmit={handleCreate}>
           <div className="row g-3">
@@ -163,7 +169,7 @@ function OrganizerDashboard() {
               <textarea className="form-control" rows="2" value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
             </div>
           </div>
-          <button type="submit" className="btn btn-primary mt-3 w-100">Create Event</button>
+          <button type="submit" className="btn btn-primary mt-3 w-100 fw-bold">Create Event</button>
         </form>
       </div>
 
@@ -225,7 +231,7 @@ function OrganizerDashboard() {
 
       {/* --- ATTENDEE DETAILS --- */}
       {selectedEvent && (
-        <div className="mt-5 p-4 border rounded bg-light">
+        <div className="mt-5 p-4 border rounded bg-light shadow-sm">
           <div className="d-flex justify-content-between align-items-center mb-3">
             <h4>📋 Registrations for: <span className="text-primary">{selectedEvent.title}</span></h4>
             <button className="btn btn-close" onClick={() => setSelectedEvent(null)}></button>
@@ -265,26 +271,28 @@ function OrganizerDashboard() {
           {attendees.length === 0 ? (
             <p className="text-center text-muted">No registrations yet.</p>
           ) : (
-            <table className="table table-bordered bg-white">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Booking Date</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {attendees.map((user, idx) => (
-                  <tr key={idx}>
-                    <td>{user.name}</td>
-                    <td>{user.email}</td>
-                    <td>{new Date(user.booking_date).toLocaleDateString()}</td>
-                    <td><span className="badge bg-success">{user.status}</span></td>
+            <div className="table-responsive">
+              <table className="table table-bordered bg-white">
+                <thead className="table-light">
+                  <tr>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Booking Date</th>
+                    <th>Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {attendees.map((user, idx) => (
+                    <tr key={idx}>
+                      <td>{user.name}</td>
+                      <td>{user.email}</td>
+                      <td>{new Date(user.booking_date).toLocaleDateString()}</td>
+                      <td><span className="badge bg-success">{user.status}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}
