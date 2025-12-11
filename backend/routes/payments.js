@@ -1,15 +1,17 @@
 const express = require("express");
 const router = express.Router();
-const pool = require("../models/db");
-const { verifyToken } = require("../controllers/middleware/auth");
-require("dotenv").config(); // Load environment variables first!
+// ✅ Use pool for queries
+const pool = require("../models/db"); 
+// ✅ Import the token verification middleware
+const { verifyToken } = require("../controllers/middleware/auth"); 
+require("dotenv").config(); 
 
 // ✅ Initialize Stripe once using secret key from .env
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 
 // ------------------- ROUTES -------------------
 
-// ✅ Create Stripe Payment Intent (used by frontend)
+// ✅ Create Stripe Payment Intent (Client Handshake)
 router.post("/create-intent", verifyToken, async (req, res) => {
   try {
     const { amount, currency = "usd", booking_id } = req.body;
@@ -35,38 +37,53 @@ router.post("/create-intent", verifyToken, async (req, res) => {
   }
 });
 
-// ✅ Confirm payment and record it in database
+// ✅ Confirm payment and record it in database (FIXED)
 router.post("/confirm", verifyToken, async (req, res) => {
   try {
     let { booking_id, amount, payment_method = "stripe" } = req.body;
-
-// 🔒 Normalize payment_method to a valid ENUM value
-const validMethods = ["credit_card", "debit_card", "upi", "cash", "stripe"];
-if (!validMethods.includes(payment_method)) {
-  payment_method = "stripe"; // fallback to stripe if frontend sent something invalid like 'card'
-}
-
     const user_id = req.user?.user_id;
 
-    if (!booking_id || !user_id || !amount) {
-      return res.status(400).json({ message: "Booking ID, user ID and amount required" });
+    // 1. HARDENED VALIDATION (Fixes 400 Bad Request)
+    if (!user_id) {
+      return res.status(400).json({ message: "User ID missing from token." });
+    }
+    // Check if booking_id is provided AND not an empty string
+    if (!booking_id || String(booking_id).trim().length === 0) {
+      return res.status(400).json({ message: "Booking ID is required." });
+    }
+    // Check if amount is positive
+    if (!amount || Number(amount) <= 0) {
+      return res.status(400).json({ message: "Valid positive amount required." });
     }
 
+    // 2. Normalize payment_method
+    const validMethods = ["credit_card", "debit_card", "upi", "cash", "stripe"];
+    if (!validMethods.includes(payment_method)) {
+      payment_method = "stripe";
+    }
+
+    // 3. Database Insertion (Set payment status to 'completed')
     const [result] = await pool.query(
       `INSERT INTO payments (booking_id, user_id, amount, payment_method, status)
-       VALUES (?, ?, ?, ?, 'success')`,
+       VALUES (?, ?, ?, ?, 'completed')`,
       [booking_id, user_id, amount, payment_method]
     );
 
+    // 4. Update booking status from 'pending' to 'confirmed'
+    await pool.query(
+        "UPDATE bookings SET status = 'confirmed' WHERE booking_id = ?", 
+        [booking_id]
+    );
+
     res.json({
-      message: "✅ Payment recorded successfully",
+      message: "✅ Payment recorded successfully and booking confirmed",
       payment: {
         payment_id: result.insertId,
         booking_id,
         user_id,
         amount,
         payment_method,
-        status: "success",
+        status: "completed",
       },
     });
   } catch (err) {
@@ -76,8 +93,13 @@ if (!validMethods.includes(payment_method)) {
 });
 
 // ✅ Get all payments (Admin only)
-router.get("/", async (req, res) => {
+router.get("/", verifyToken, async (req, res) => {
   try {
+    // Basic Admin check (You would ideally use authorizeRoles here)
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: "Access denied. Admins only." });
+    }
+    
     const [rows] = await pool.query(`
       SELECT 
         p.payment_id, p.booking_id, p.user_id, u.name AS user_name,
