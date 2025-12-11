@@ -1,12 +1,13 @@
 const express = require("express");
-const cors = require("cors"); // ✅ Only declare once (Keep this one)
+const cors = require("cors"); // ✅ Declare ONLY once (Keep this one)
 const bodyParser = require("body-parser");
 require("dotenv").config();
 const db = require("./models/db");
+const path = require("path"); // Used for serving static files
 
 const app = express();
 
-// ✅ CORS FIX: Allows Vercel's changing domains to connect
+// ✅ CORS FIX: Allows ANY Vercel or Localhost domain to connect
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -24,6 +25,9 @@ app.use(
   })
 );
 
+// ✅ SERVE STATIC IMAGES
+// This allows the frontend to access images at https://eventuraa-backend.onrender.com/uploads/filename.jpg
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
