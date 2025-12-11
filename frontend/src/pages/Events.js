@@ -37,16 +37,30 @@ const Events = () => {
     if (!token) return alert("Please Login first!");
     
     try {
-      await api.post("/bookings", { event_id: eventId });
+      // 1. Create the Booking and CAPTURE the response
+      const res = await api.post("/bookings", { event_id: eventId });
       
+      // 2. Get the new Booking ID from the response
+      // (Ensure your backend returns 'bookingId' or 'booking_id')
+      const bookingId = res.data.bookingId || res.data.booking_id; 
+
       if (Number(price) > 0) {
         alert("🎉 Booking Reserved! Redirecting to Payment...");
-        navigate("/payments"); 
+        
+        // 3. Send Booking ID & Price to the payment page
+        navigate("/payments", { 
+          state: { 
+            bookingId: bookingId, 
+            price: price 
+          } 
+        }); 
+
       } else {
         alert("🎉 Free Event Booked Successfully!");
         navigate("/bookings"); 
       }
     } catch (err) { 
+      console.error(err);
       alert(err.response?.data?.error || "Booking Failed"); 
     }
   };
