@@ -16,7 +16,33 @@ function authenticateToken(req, res, next) {
   });
 }
 
-// Get User Bookings
+// =========================================================
+// ✅ 1. SPECIFIC ROUTES FIRST (Fixes 404 Error)
+// =========================================================
+
+// GET "MY BOOKINGS" (For Payments Page & Dashboard)
+router.get("/my-bookings", authenticateToken, async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT b.booking_id, e.title AS event_name, b.booking_date, b.status, e.price 
+       FROM bookings b 
+       JOIN events e ON b.event_id = e.event_id 
+       WHERE b.user_id = ?
+       ORDER BY b.booking_date DESC`,
+      [req.user.user_id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error fetching bookings" });
+  }
+});
+
+// =========================================================
+// ✅ 2. GENERIC ROUTES
+// =========================================================
+
+// GET ALL BOOKINGS (Alias for root /)
 router.get("/", authenticateToken, async (req, res) => {
   try {
     const [rows] = await db.query(
@@ -31,52 +57,61 @@ router.get("/", authenticateToken, async (req, res) => {
   }
 });
 
-// CREATE BOOKING (With Capacity Check)
+// CREATE BOOKING (Fixed: Returns bookingId)
 router.post("/", authenticateToken, async (req, res) => {
   try {
     const { event_id } = req.body;
     const userId = req.user.user_id;
 
-    // 1. Check if User already booked (Prevent double booking)
+    // 1. Check double booking
     const [existing] = await db.query(
       "SELECT * FROM bookings WHERE user_id = ? AND event_id = ?",
       [userId, event_id]
     );
     if (existing.length > 0) {
-      return res.status(400).json({ error: "⚠️ You already booked this event!" });
+      // If they already booked, return the existing ID so they can pay for it
+      return res.json({ 
+        message: "You already booked this event!", 
+        bookingId: existing[0].booking_id 
+      });
     }
 
-    // 2. CHECK SEAT AVAILABILITY (The new logic)
+    // 2. Check Capacity
     const [eventData] = await db.query("SELECT capacity FROM events WHERE event_id = ?", [event_id]);
     const [bookingCount] = await db.query("SELECT COUNT(*) as count FROM bookings WHERE event_id = ?", [event_id]);
     
-    const capacity = eventData[0].capacity;
-    const currentBookings = bookingCount[0].count;
+    // Safety check for missing capacity column
+    const capacity = eventData[0]?.capacity || 100;
+    const currentBookings = bookingCount[0]?.count || 0;
 
     if (currentBookings >= capacity) {
       return res.status(400).json({ error: "❌ Sold Out! No seats available." });
     }
 
-    // 3. Create Booking
-    await db.query(
-      "INSERT INTO bookings (user_id, event_id, status) VALUES (?, ?, 'confirmed')",
+    // 3. Create Booking & Set Status to 'pending' (until paid)
+    const [result] = await db.query(
+      "INSERT INTO bookings (user_id, event_id, status) VALUES (?, ?, 'pending')",
       [userId, event_id]
     );
 
-    res.json({ message: "✅ Booking successful!" });
+    // ✅ IMPORTANT: Send back the ID so the frontend can redirect to Payment
+    res.json({ 
+      message: "✅ Booking successful!", 
+      bookingId: result.insertId 
+    });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// ✅ DELETE Booking (The 24-Hour Rule)
+// DELETE Booking (24-Hour Rule)
 router.delete("/:id", authenticateToken, async (req, res) => {
   try {
     const bookingId = req.params.id;
     const userId = req.user.user_id;
 
-    // 1. Get Event Date
     const [booking] = await db.query(
       `SELECT b.booking_id, e.date 
        FROM bookings b 
@@ -87,22 +122,16 @@ router.delete("/:id", authenticateToken, async (req, res) => {
 
     if (booking.length === 0) return res.status(404).json({ error: "Booking not found" });
 
-    // 2. Check Time Difference
     const eventDate = new Date(booking[0].date);
     const now = new Date();
     const diffHours = (eventDate - now) / (1000 * 60 * 60);
 
-    // 🛑 UPDATED LOGIC:
-    // Only block if the event is in the FUTURE (diffHours > 0)
-    // AND starts in less than 24 hours.
-    // This allows you to delete past events (where diffHours is negative).
     if (diffHours > 0 && diffHours < 24) {
       return res.status(400).json({ 
         error: "❌ Cannot cancel. Event starts in less than 24 hours." 
       });
     }
 
-    // 3. Delete
     await db.query("DELETE FROM bookings WHERE booking_id = ?", [bookingId]);
     res.json({ message: "✅ Booking cancelled successfully" });
 
