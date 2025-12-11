@@ -1,28 +1,17 @@
 const express = require("express");
 const router = express.Router();
 const db = require("../models/db");
-const jwt = require("jsonwebtoken");
-
-// Middleware
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
-  if (!token) return res.status(401).json({ error: "Missing token" });
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: "Invalid token" });
-    req.user = user;
-    next();
-  });
-}
+// ✅ Import the auth middleware correctly
+const { verifyToken } = require("../controllers/middleware/auth");
 
 // =========================================================
-// ✅ 1. SPECIFIC ROUTES FIRST (Fixes 404 Error)
+// ✅ 1. SPECIFIC ROUTES FIRST (Crucial for 404 Fix)
 // =========================================================
 
 // GET "MY BOOKINGS" (For Payments Page & Dashboard)
-router.get("/my-bookings", authenticateToken, async (req, res) => {
+router.get("/my-bookings", verifyToken, async (req, res) => {
   try {
+    // We join 'bookings' with 'events' to get the Title and Price
     const [rows] = await db.query(
       `SELECT b.booking_id, e.title AS event_name, b.booking_date, b.status, e.price 
        FROM bookings b 
@@ -33,7 +22,7 @@ router.get("/my-bookings", authenticateToken, async (req, res) => {
     );
     res.json(rows);
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching my bookings:", err);
     res.status(500).json({ error: "Error fetching bookings" });
   }
 });
@@ -42,8 +31,8 @@ router.get("/my-bookings", authenticateToken, async (req, res) => {
 // ✅ 2. GENERIC ROUTES
 // =========================================================
 
-// GET ALL BOOKINGS (Alias for root /)
-router.get("/", authenticateToken, async (req, res) => {
+// GET ALL BOOKINGS (For the main list if needed)
+router.get("/", verifyToken, async (req, res) => {
   try {
     const [rows] = await db.query(
       `SELECT b.booking_id, e.title AS event_name, b.booking_date, b.status 
@@ -57,8 +46,8 @@ router.get("/", authenticateToken, async (req, res) => {
   }
 });
 
-// CREATE BOOKING (Fixed: Returns bookingId)
-router.post("/", authenticateToken, async (req, res) => {
+// CREATE BOOKING (Fixed to return bookingId)
+router.post("/", verifyToken, async (req, res) => {
   try {
     const { event_id } = req.body;
     const userId = req.user.user_id;
@@ -69,7 +58,7 @@ router.post("/", authenticateToken, async (req, res) => {
       [userId, event_id]
     );
     if (existing.length > 0) {
-      // If they already booked, return the existing ID so they can pay for it
+      // Return existing ID so user can proceed to payment
       return res.json({ 
         message: "You already booked this event!", 
         bookingId: existing[0].booking_id 
@@ -80,7 +69,7 @@ router.post("/", authenticateToken, async (req, res) => {
     const [eventData] = await db.query("SELECT capacity FROM events WHERE event_id = ?", [event_id]);
     const [bookingCount] = await db.query("SELECT COUNT(*) as count FROM bookings WHERE event_id = ?", [event_id]);
     
-    // Safety check for missing capacity column
+    // Safety fallback if capacity column is missing
     const capacity = eventData[0]?.capacity || 100;
     const currentBookings = bookingCount[0]?.count || 0;
 
@@ -88,26 +77,26 @@ router.post("/", authenticateToken, async (req, res) => {
       return res.status(400).json({ error: "❌ Sold Out! No seats available." });
     }
 
-    // 3. Create Booking & Set Status to 'pending' (until paid)
+    // 3. Create Booking (Status: pending)
     const [result] = await db.query(
       "INSERT INTO bookings (user_id, event_id, status) VALUES (?, ?, 'pending')",
       [userId, event_id]
     );
 
-    // ✅ IMPORTANT: Send back the ID so the frontend can redirect to Payment
+    // ✅ IMPORTANT: Return bookingId for the Frontend
     res.json({ 
       message: "✅ Booking successful!", 
       bookingId: result.insertId 
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("Error creating booking:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// DELETE Booking (24-Hour Rule)
-router.delete("/:id", authenticateToken, async (req, res) => {
+// DELETE BOOKING (24-Hour Rule)
+router.delete("/:id", verifyToken, async (req, res) => {
   try {
     const bookingId = req.params.id;
     const userId = req.user.user_id;
