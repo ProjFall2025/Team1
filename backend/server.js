@@ -7,7 +7,7 @@ const path = require("path"); // Used for serving static files
 
 const app = express();
 
-// ✅ CORS FIX: Allows ANY Vercel or Localhost domain to connect
+// ✅ CORS FIX: Allows Vercel's changing domains to connect
 app.use(
   cors({
     origin: function (origin, callback) {
@@ -25,8 +25,7 @@ app.use(
   })
 );
 
-// ✅ SERVE STATIC IMAGES
-// This allows the frontend to access images at https://eventuraa-backend.onrender.com/uploads/filename.jpg
+// ✅ SERVE STATIC IMAGES (Required for organizer uploads)
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
