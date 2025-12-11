@@ -1,5 +1,7 @@
+// /src/pages/Payments.js
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom"; // 👈 Added useLocation
+// ✅ IMPORT useLocation for receiving data
+import { useNavigate, useLocation } from "react-router-dom"; 
 import axios from "../api/axiosConfig";
 import { loadStripe } from "@stripe/stripe-js";
 import {
@@ -9,28 +11,35 @@ import {
   useElements,
 } from "@stripe/react-stripe-js";
 
-// ✅ Load Stripe Key
+// ✅ Load publishable key from .env (Assumes you set this in Vercel)
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY || "pk_test_placeholder");
 
+// --- Checkout Form remains the same, but uses the injected variables ---
 function CheckoutForm({ selectedBookingId, amountInput, onResult }) {
   const stripe = useStripe();
   const elements = useElements();
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // Convert dollars to cents safely
   const amountCents = useMemo(() => {
     const n = Number(amountInput);
     return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : 0;
   }, [amountInput]);
 
+  // 💳 Handle Stripe payment flow
   const handlePay = async (e) => {
     e.preventDefault();
     setMsg("");
 
     if (!stripe || !elements) return;
+    
+    // ⚠️ This now relies on the parent component to provide a non-empty ID
     if (!selectedBookingId) {
-      setMsg("Please select a booking first.");
+      setMsg("Error: Missing Booking ID. Please go back to Events.");
+      return;
+    }
+    if (!amountCents) {
+      setMsg("Error: Amount is zero or invalid.");
       return;
     }
 
@@ -38,7 +47,7 @@ function CheckoutForm({ selectedBookingId, amountInput, onResult }) {
       setSubmitting(true);
       const token = localStorage.getItem("token");
 
-      // 1️⃣ Create PaymentIntent
+      // 1️⃣ Create PaymentIntent (amount is in cents)
       const { data } = await axios.post(
         "/payments/create-intent",
         { amount: amountCents, currency: "usd", booking_id: selectedBookingId },
@@ -46,23 +55,24 @@ function CheckoutForm({ selectedBookingId, amountInput, onResult }) {
       );
 
       const clientSecret = data?.clientSecret;
-      if (!clientSecret) throw new Error("Server did not return a payment secret.");
+      if (!clientSecret) throw new Error("No client secret returned from server.");
 
-      // 2️⃣ Confirm Card Payment
+      // 2️⃣ Confirm payment on client
       const card = elements.getElement(CardElement);
-      const result = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: { card },
-      });
+      const result = await stripe.confirmCardPayment(clientSecret, { payment_method: { card } });
 
       if (result.error) {
         throw new Error(result.error.message);
       }
 
-      // 3️⃣ Confirm in Database
+      // 3️⃣ If payment succeeded, confirm in Database
       if (result.paymentIntent?.status === "succeeded") {
         await axios.post(
           "/payments/confirm",
-          { booking_id: selectedBookingId },
+          {
+            booking_id: selectedBookingId,
+            amount: (amountCents / 100).toFixed(2), // Send fixed amount to DB
+          },
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
@@ -72,96 +82,71 @@ function CheckoutForm({ selectedBookingId, amountInput, onResult }) {
       }
     } catch (err) {
       console.error("Payment error:", err);
-      setMsg(`Payment failed: ${err.message || "Unknown error"}`);
+      const apiMsg = err?.response?.data?.message || err?.message || "Unexpected error while paying";
+      setMsg(`Payment failed: ${apiMsg}`);
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={handlePay} className="card p-3 shadow-sm border-0 bg-light">
-      <div className="mb-3 bg-white p-3 rounded border">
-        <CardElement options={{ style: { base: { fontSize: '16px' } } }} />
+    <form onSubmit={handlePay} style={{ maxWidth: 420, marginTop: 16 }}>
+      {/* ... JSX remains the same ... */}
+      <div style={{border: "1px solid #ddd", padding: 12, borderRadius: 8, marginBottom: 12, background: "#fff",}}>
+        <CardElement options={{ hidePostalCode: false }} />
       </div>
+
       <button
         type="submit"
-        disabled={!stripe || submitting}
+        disabled={!stripe || submitting || !selectedBookingId}
         className="btn btn-primary w-100 fw-bold"
+        style={{padding: "10px 16px", background: "#635bff", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer",}}
       >
         {submitting ? "Processing..." : `Pay $${Number(amountInput || 0).toFixed(2)}`}
       </button>
-      {msg && <div className={`alert mt-2 ${msg.includes("✅") ? "alert-success" : "alert-danger"}`}>{msg}</div>}
+
+      {msg && <p style={{ marginTop: 10, color: msg.startsWith("✅") ? "green" : "crimson" }}>{msg}</p>}
     </form>
   );
 }
 
 export default function Payments() {
   const navigate = useNavigate();
-  const location = useLocation(); // 👈 Access data sent from Events.js
+  const location = useLocation(); // ✅ Access data sent from Events.js
   
-  // 1. Try to get data from navigation state (The "Auto-Fill" Magic)
-  const incomingBookingId = location.state?.bookingId || "";
-  const incomingPrice = location.state?.price || "19.99";
+  // 1. Try to get data from navigation state
+  const incomingBookingId = location.state?.bookingId;
+  const incomingPrice = location.state?.price;
 
-  const [bookings, setBookings] = useState([]);
-  const [selectedBookingId, setSelectedBookingId] = useState(incomingBookingId);
-  const [amount, setAmount] = useState(incomingPrice);
+  // 2. Set state based on incoming data
+  const [selectedBookingId, setSelectedBookingId] = useState(incomingBookingId || "");
+  const [amount, setAmount] = useState(incomingPrice || "19.99");
   const [statusMsg, setStatusMsg] = useState("");
 
-  // 2. If no incoming booking, fetch list so user can select manually
+  // 3. Optional: Redirect if no booking ID is provided (if accessed directly)
   useEffect(() => {
-    if (!incomingBookingId) {
-      const fetchBookings = async () => {
-        try {
-          const res = await axios.get("/bookings/my-bookings"); // Ensure this matches your route
-          const data = Array.isArray(res.data) ? res.data : [];
-          // Only show 'pending' bookings
-          const pending = data.filter(b => b.status === 'pending');
-          setBookings(pending);
-        } catch (err) {
-          console.error("Failed to load bookings", err);
-        }
-      };
-      fetchBookings();
+    if (!incomingBookingId && !selectedBookingId) {
+       // Only redirect if this is the first time loading and no manual ID is set
+       // navigate("/events"); 
     }
-  }, [incomingBookingId]);
+  }, [incomingBookingId, selectedBookingId, navigate]);
+
 
   return (
     <div className="container mt-5" style={{ maxWidth: "500px" }}>
       <h2 className="mb-4 fw-bold text-center">💳 Secure Checkout</h2>
 
-      {/* ✅ AUTO-SELECTED VIEW */}
-      {incomingBookingId ? (
+      {/* ✅ DISPLAY THE AUTO-SELECTED BOOKING */}
+      {selectedBookingId ? (
          <div className="alert alert-info text-center">
-            <h5>Paying for Booking #{selectedBookingId}</h5>
-            <p className="mb-0">Total: <strong>${amount}</strong></p>
+            <h5>Booking ID: #{selectedBookingId}</h5>
+            <p className="mb-0">Amount Due: <strong>${Number(amount).toFixed(2)}</strong></p>
+            <p className="small text-muted mb-0">Confirm payment below.</p>
          </div>
       ) : (
-        /* ⚠️ MANUAL SELECTION VIEW (Fallback) */
-        <div className="mb-4">
-          <label className="form-label">Select a Pending Booking:</label>
-          <select
-            className="form-select"
-            value={selectedBookingId}
-            onChange={(e) => setSelectedBookingId(e.target.value)}
-          >
-            <option value="">-- Choose Booking --</option>
-            {bookings.map((b) => (
-              <option key={b.booking_id} value={b.booking_id}>
-                 #{b.booking_id} - {b.event_name || b.title}
-              </option>
-            ))}
-          </select>
-          <div className="mt-2">
-            <label className="form-label">Amount ($)</label>
-            <input 
-              type="number" 
-              className="form-control" 
-              value={amount} 
-              onChange={(e) => setAmount(e.target.value)} 
-            />
-          </div>
-        </div>
+         <div className="alert alert-warning">
+            ⚠️ No booking selected. Please book an event first.
+         </div>
       )}
 
       {/* STRIPE FORM */}
@@ -172,7 +157,7 @@ export default function Payments() {
             amountInput={amount}
             onResult={(r) => {
               if (r?.ok) {
-                setStatusMsg("✅ Payment successful! Redirecting...");
+                setStatusMsg("✅ Payment successful! Redirecting to tickets...");
                 setTimeout(() => navigate("/bookings"), 2000);
               }
             }}
@@ -180,7 +165,7 @@ export default function Payments() {
         </Elements>
       </div>
 
-      {statusMsg && <div className="alert alert-success mt-3">{statusMsg}</div>}
+      {statusMsg && <div className={`alert mt-3 ${statusMsg.includes("success") ? "alert-success" : "alert-danger"}`}>{statusMsg}</div>}
     </div>
   );
 }
