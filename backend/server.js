@@ -1,32 +1,29 @@
-const path = require("path");
 const express = require("express");
-const cors = require("cors"); // ✅ Declared ONLY here
+const cors = require("cors"); // ✅ Only declare once (Keep this one)
 const bodyParser = require("body-parser");
 require("dotenv").config();
 const db = require("./models/db");
 
 const app = express();
 
-// ✅ CORS Configuration (Fixed)
-const cors = require("cors"); // Ensure this is imported
+// ✅ CORS FIX: Allows Vercel's changing domains to connect
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps)
+      if (!origin) return callback(null, true);
+      
+      // Allow Localhost or ANY Vercel App
+      if (origin.includes("localhost") || origin.includes(".vercel.app")) {
+        return callback(null, true);
+      }
+      
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
+  })
+);
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // ✅ Allow Localhost + ANY Vercel App
-    if (origin.includes("localhost") || origin.includes(".vercel.app")) {
-      return callback(null, true);
-    }
-    
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true
-}));
-// ✅ SERVE STATIC IMAGES
-// This allows the frontend to access images at http://localhost:5001/uploads/filename.jpg
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
