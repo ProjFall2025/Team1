@@ -7,13 +7,12 @@ const db = require("./models/db");
 
 const app = express();
 
-// ✅ Middleware
-app.use(
-  cors({
-    origin: "http://localhost:3000", // Allow React frontend
-    credentials: true,
-  })
-);
+const cors = require("cors"); // (Ensure this is imported)
+
+app.use(cors({
+  origin: ["http://localhost:3000", "https://team1-kohl.vercel.app"],
+  credentials: true
+}));
 // ... other middleware ...
 
 // ✅ SERVE STATIC IMAGES
