@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
-// 1. IMPORT YOUR NEW API UTILITY (No more direct axios)
-import api from "../api/axiosConfig";
+// ✅ IMPORT API UTILITY
+import api from "../api/axiosConfig"; 
 import { useNavigate } from "react-router-dom";
 
 const Events = () => {
@@ -14,11 +14,15 @@ const Events = () => {
   const fetchEvents = async () => {
     setLoading(true);
     try {
-      // ✅ USE API UTILITY: Auto-detects Local vs Live URL
       const res = await api.get("/events", {
         params: filters 
       });
-      setEvents(res.data);
+      // ✅ Safety Check: Ensure response is an array
+      if (Array.isArray(res.data)) {
+        setEvents(res.data);
+      } else {
+        setEvents([]);
+      }
     } catch (err) {
       console.error("Error fetching events", err);
     } finally {
@@ -33,7 +37,6 @@ const Events = () => {
     if (!token) return alert("Please Login first!");
     
     try {
-      // ✅ USE API UTILITY: Auto-attaches Token (via interceptor)
       await api.post("/bookings", { event_id: eventId });
       
       if (Number(price) > 0) {
@@ -72,8 +75,12 @@ const Events = () => {
       {loading ? <p>Loading...</p> : (
         <div className="row">
           {events.map((ev) => {
-            // Logic for Sold Out
-            const isSoldOut = ev.available_seats <= 0;
+            // ✅ DEFENSIVE CODE: Handle missing/null data safely
+            const isSoldOut = (ev.available_seats || 0) <= 0;
+            const description = ev.description || "No description available.";
+            const imageUrl = ev.image_url || "https://via.placeholder.com/300";
+            const location = ev.location || "Online";
+            const price = Number(ev.price) || 0;
             
             return (
               <div className="col-md-4 mb-4" key={ev.event_id}>
@@ -81,42 +88,43 @@ const Events = () => {
                   
                   {/* Image Badge for Seats */}
                   <div style={{ position: "relative" }}>
-                    <img src={ev.image_url || "https://via.placeholder.com/300"} className="card-img-top" 
-                        style={{height: "200px", objectFit: "cover"}} alt="Event" />
+                    <img src={imageUrl} className="card-img-top" 
+                        style={{height: "200px", objectFit: "cover"}} alt="Event" 
+                        onError={(e) => e.target.src = "https://via.placeholder.com/300"} // 👈 Fallback if image fails
+                    />
                     
-                    {/* 🎟️ SEAT BADGE */}
                     <span 
                       className={`badge position-absolute top-0 end-0 m-2 ${isSoldOut ? 'bg-danger' : 'bg-info text-dark'}`}
                       style={{ fontSize: "0.9rem" }}
                     >
-                      {isSoldOut ? "SOLD OUT" : `${ev.available_seats} Seats Left`}
+                      {isSoldOut ? "SOLD OUT" : `${ev.available_seats || 0} Seats Left`}
                     </span>
                   </div>
 
                   <div className="card-body d-flex flex-column">
                     <div className="d-flex justify-content-between align-items-center mb-2">
-                      <h5 className="card-title fw-bold mb-0">{ev.title}</h5>
-                      <span className={`badge ${Number(ev.price) > 0 ? "bg-success" : "bg-warning text-dark"}`}>
-                        {Number(ev.price) > 0 ? `₹${ev.price}` : "Free"}
+                      <h5 className="card-title fw-bold mb-0">{ev.title || "Untitled Event"}</h5>
+                      <span className={`badge ${price > 0 ? "bg-success" : "bg-warning text-dark"}`}>
+                        {price > 0 ? `₹${price}` : "Free"}
                       </span>
                     </div>
 
                     <p className="small text-muted mb-2">
-                      📍 {ev.location} <br/> 
-                      📅 {new Date(ev.date).toLocaleDateString()}
+                      📍 {location} <br/> 
+                      📅 {ev.date ? new Date(ev.date).toLocaleDateString() : "Date TBD"}
                     </p>
                     
+                    {/* ✅ CRASH PREVENTION: Safe substring */}
                     <p className="card-text text-secondary small flex-grow-1">
-                      {ev.description.substring(0, 100)}...
+                      {description.substring(0, 100)}...
                     </p>
 
-                    {/* 🛑 DISABLE BUTTON IF SOLD OUT */}
                     <button 
                       className={`btn w-100 fw-bold mt-3 ${isSoldOut ? 'btn-secondary' : 'btn-outline-primary'}`}
-                      onClick={() => handleBook(ev.event_id, ev.price)}
+                      onClick={() => handleBook(ev.event_id, price)}
                       disabled={isSoldOut}
                     >
-                      {isSoldOut ? "🚫 Sold Out" : (Number(ev.price) > 0 ? "Book Ticket" : "Register Free")}
+                      {isSoldOut ? "🚫 Sold Out" : (price > 0 ? "Book Ticket" : "Register Free")}
                     </button>
                   </div>
                 </div>
